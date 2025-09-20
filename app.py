@@ -59,6 +59,19 @@ def create_pdf(data_list, font_name, width, height, font_override=0):
     buffer.seek(0)
     return buffer
 
+# === FUNCTION TO FETCH GOOGLE SHEET WITH SESSION STATE CACHE ===
+def fetch_google_sheet(url):
+    if "google_csv_data" not in st.session_state or st.session_state.google_csv_url != url:
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            st.session_state.google_csv_data = response.content
+            st.session_state.google_csv_url = url
+        except Exception as e:
+            st.error(f"Could not fetch Google Sheet: {e}")
+            return None
+    return pd.read_csv(BytesIO(st.session_state.google_csv_data))
+
 # === STREAMLIT UI ===
 st.title("Excel/CSV/Google Sheet to Label PDF Generator")
 st.write("""
@@ -83,13 +96,7 @@ uploaded_file = st.file_uploader("Upload CSV or Excel file", type=["csv", "xlsx"
 # --- Load Data ---
 df = None
 if google_sheet_url:
-    try:
-        response = requests.get(google_sheet_url)
-        response.raise_for_status()
-        df = pd.read_csv(BytesIO(response.content))
-        st.success("Google Sheet loaded successfully!")
-    except Exception as e:
-        st.warning(f"Could not load Google Sheet: {e}")
+    df = fetch_google_sheet(google_sheet_url)
 
 elif uploaded_file:
     try:
