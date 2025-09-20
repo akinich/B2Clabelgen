@@ -4,14 +4,13 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
 
 # === DEFAULT CONSTANTS ===
 DEFAULT_WIDTH_MM = 50
 DEFAULT_HEIGHT_MM = 30
 FONT_ADJUSTMENT = 2  # for printer safety
 
-# Built-in fonts for ReportLab
+# Built-in fonts
 AVAILABLE_FONTS = [
     "Helvetica",
     "Helvetica-Bold",
@@ -21,7 +20,7 @@ AVAILABLE_FONTS = [
     "Courier-Bold"
 ]
 
-# === HELPER FUNCTIONS FOR PDF ===
+# === HELPER FUNCTIONS ===
 def find_max_font_size_for_multiline(lines, max_width, max_height, font_name):
     font_size = 1
     while True:
@@ -59,48 +58,8 @@ def create_pdf(data_list, font_name, width, height, font_override=0):
     buffer.seek(0)
     return buffer
 
-# === HELPER FUNCTIONS FOR PREVIEW IMAGE ===
-def generate_label_preview(text, font_name, width_mm, height_mm, font_override=0):
-    # Convert mm to pixels (roughly 3.78 px per mm)
-    scale = 3.78
-    width_px = int(width_mm * scale)
-    height_px = int(height_mm * scale)
-    
-    img = Image.new("RGB", (width_px, height_px), color="white")
-    draw = ImageDraw.Draw(img)
-    
-    # PIL font fallback
-    try:
-        pil_font = ImageFont.truetype("arial.ttf", 10)
-    except:
-        pil_font = ImageFont.load_default()
-    
-    # Auto font size
-    font_size = 10
-    lines = text.split()
-    while True:
-        font = ImageFont.truetype("arial.ttf", font_size)
-        line_widths = [font.getsize(line)[0] for line in lines]
-        total_height = len(lines) * font_size + (len(lines) - 1) * 2
-        if max(line_widths) > width_px - 4 or total_height > height_px - 4:
-            font_size = max(font_size - 1 + font_override, 1)
-            break
-        font_size += 1
-
-    font = ImageFont.truetype("arial.ttf", font_size)
-    total_height = len(lines) * font_size + (len(lines) - 1) * 2
-    start_y = (height_px - total_height) / 2
-    
-    for i, line in enumerate(lines):
-        w, h = font.getsize(line)
-        x = (width_px - w) / 2
-        y = start_y + i * (font_size + 2)
-        draw.text((x, y), line, fill="black", font=font)
-    
-    return img
-
 # === STREAMLIT UI ===
-st.title("Excel/CSV to Label PDF Generator with Preview")
+st.title("Excel/CSV to Label PDF Generator")
 st.write("Generate multi-page PDF labels with custom settings.")
 
 # --- User Inputs ---
@@ -143,12 +102,6 @@ if df is not None:
         cell_values = [str(val).strip() for val in cell_values if pd.notnull(val) and str(val).strip() != ""]
         if remove_duplicates:
             cell_values = list(dict.fromkeys(cell_values))
-
-        # --- Label Preview (first label only) ---
-        if cell_values:
-            st.subheader("Label Preview")
-            img = generate_label_preview(cell_values[0], selected_font, width_mm, height_mm, font_override)
-            st.image(img)
 
         # --- Generate PDF ---
         if st.button("Generate PDF"):
