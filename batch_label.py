@@ -5,7 +5,8 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from io import BytesIO
 
-# === DEFAULT CONSTANTS ===
+# === CONSTANTS ===
+
 DEFAULT_WIDTH_MM = 50
 DEFAULT_HEIGHT_MM = 30
 LABEL_MARGIN = 4
@@ -20,7 +21,8 @@ AVAILABLE_FONTS = [
 ]
 
 
-# === TEXT WRAP ===
+# === TEXT WRAPPING ===
+
 def wrap_text(text, font_name, font_size, max_width):
 
     words = text.split()
@@ -47,6 +49,7 @@ def wrap_text(text, font_name, font_size, max_width):
 
 
 # === FAST FONT SIZE SEARCH ===
+
 def find_max_font_size(text, max_width, max_height, font_name):
 
     low = 1
@@ -68,7 +71,7 @@ def find_max_font_size(text, max_width, max_height, font_name):
 
         total_height = len(lines) * mid + (len(lines) - 1) * 2
 
-        if max_line_width <= (max_width - LABEL_MARGIN) and total_height <= (max_height):
+        if max_line_width <= (max_width - LABEL_MARGIN) and total_height <= max_height:
             best = mid
             low = mid + 1
         else:
@@ -77,12 +80,13 @@ def find_max_font_size(text, max_width, max_height, font_name):
     return best
 
 
-# === DRAW STANDARDIZED LABEL ===
+# === DRAW LABEL ===
+
 def draw_label_pdf(c, batch_number, product_text, font_name, width, height):
 
     batch_text = f"BN/{batch_number}"
 
-    # --- Batch Font (smaller) ---
+    # Batch line (smaller)
     batch_font_size = int(height * 0.18)
 
     c.setFont(font_name, batch_font_size)
@@ -94,7 +98,7 @@ def draw_label_pdf(c, batch_number, product_text, font_name, width, height):
 
     c.drawString(batch_x, batch_y, batch_text)
 
-    # --- Product Text Area ---
+    # Product text area
     product_area_height = height - batch_font_size - 10
 
     font_size = find_max_font_size(
@@ -124,6 +128,7 @@ def draw_label_pdf(c, batch_number, product_text, font_name, width, height):
 
 
 # === CREATE PDF ===
+
 def create_pdf(labels, batch_number, font_name, width, height):
 
     buffer = BytesIO()
@@ -149,40 +154,59 @@ st.title("Batch Label Generator")
 
 selected_font = st.selectbox("Font", AVAILABLE_FONTS, index=1)
 
-width_mm = st.number_input("Label width (mm)", min_value=10, max_value=200, value=50)
-height_mm = st.number_input("Label height (mm)", min_value=10, max_value=200, value=30)
+width_mm = st.number_input(
+    "Label width (mm)",
+    min_value=10,
+    max_value=200,
+    value=DEFAULT_WIDTH_MM
+)
+
+height_mm = st.number_input(
+    "Label height (mm)",
+    min_value=10,
+    max_value=200,
+    value=DEFAULT_HEIGHT_MM
+)
 
 uploaded_file = st.file_uploader("Upload CSV or Excel", type=["csv", "xlsx"])
+
+
+# === FILE PROCESSING ===
 
 if uploaded_file:
 
     if uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
+        df_raw = pd.read_csv(uploaded_file, header=None)
     else:
-        df = pd.read_excel(uploaded_file)
+        df_raw = pd.read_excel(uploaded_file, header=None)
 
-    st.dataframe(df)
+    st.write("Raw file preview")
+    st.dataframe(df_raw)
 
-    # === FIND BATCH NUMBER ===
+    # Remove empty columns
+    df_raw = df_raw.dropna(axis=1, how="all")
 
-    batch_number = None
-
-    for col in df.columns:
-
-        if "batch" in col.lower():
-
-            batch_number = str(df[col].dropna().iloc[0])
-
-            break
-
-    if not batch_number:
-        st.error("Batch number not found")
+    # === BATCH NUMBER FROM C2 ===
+    try:
+        batch_number = str(df_raw.iloc[0,2]).strip()
+    except:
+        st.error("Could not read batch number from cell C2.")
         st.stop()
 
-    # === VALIDATE COLUMNS ===
+    if batch_number.lower() == "nan" or batch_number == "":
+        st.error("Batch number missing in C2.")
+        st.stop()
+
+    # === CREATE DATA TABLE ===
+    df = df_raw.iloc[1:].reset_index(drop=True)
+    df.columns = df.iloc[0]
+    df = df[1:].reset_index(drop=True)
+
+    st.write("Parsed data")
+    st.dataframe(df)
 
     if "Name" not in df.columns or "Weight" not in df.columns:
-        st.error("Columns 'Name' and 'Weight' are required.")
+        st.error("Columns 'Name' and 'Weight' not found.")
         st.stop()
 
     labels = []
@@ -202,7 +226,7 @@ if uploaded_file:
 
         labels.append(product_text)
 
-    # remove duplicates
+    # Remove duplicates
     labels = list(dict.fromkeys(labels))
 
     st.info(f"Labels to generate: {len(labels)}")
