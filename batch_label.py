@@ -55,11 +55,13 @@ def wrap_text(text, font_name, font_size, max_width):
 # FONT SIZE SEARCH
 # ==============================
 
-def find_max_font_size(text, max_width, max_height, font_name):
+def find_max_font_size(text_lines, max_width, max_height, font_name):
 
     low = 1
     high = 200
     best = 1
+
+    text = " ".join(text_lines)
 
     while low <= high:
 
@@ -89,45 +91,33 @@ def find_max_font_size(text, max_width, max_height, font_name):
 # DRAW LABEL
 # ==============================
 
-def draw_label_pdf(c, batch_number, product_text, font_name, width, height):
+def draw_label_pdf(c, label_text, font_name, width, height):
 
-    batch_text = f"BN/{batch_number}"
+    text_lines = label_text.split("\n")
 
-    batch_font_size = int(height * 0.18)
+    font_size = find_max_font_size(text_lines, width, height, font_name)
 
-    c.setFont(font_name, batch_font_size)
+    wrapped_lines = []
 
-    batch_width = pdfmetrics.stringWidth(batch_text, font_name, batch_font_size)
+    for line in text_lines:
 
-    batch_x = (width - batch_width) / 2
-    batch_y = height - batch_font_size - 4
-
-    c.drawString(batch_x, batch_y, batch_text)
-
-    product_area_height = height - batch_font_size - 10
-
-    font_size = find_max_font_size(
-        product_text,
-        width,
-        product_area_height,
-        font_name
-    )
-
-    lines = wrap_text(product_text, font_name, font_size, width - LABEL_MARGIN)
+        wrapped_lines.extend(
+            wrap_text(line, font_name, font_size, width - LABEL_MARGIN)
+        )
 
     c.setFont(font_name, font_size)
 
-    total_height = len(lines) * font_size + (len(lines) - 1) * 2
+    total_height = len(wrapped_lines) * font_size + (len(wrapped_lines) - 1) * 2
 
-    start_y = (product_area_height - total_height) / 2
+    start_y = (height - total_height) / 2
 
-    for i, line in enumerate(lines):
+    for i, line in enumerate(wrapped_lines):
 
         line_width = pdfmetrics.stringWidth(line, font_name, font_size)
 
         x = (width - line_width) / 2
 
-        y = start_y + (len(lines) - i - 1) * (font_size + 2)
+        y = start_y + (len(wrapped_lines) - i - 1) * (font_size + 2)
 
         c.drawString(x, y, line)
 
@@ -136,7 +126,7 @@ def draw_label_pdf(c, batch_number, product_text, font_name, width, height):
 # CREATE PDF
 # ==============================
 
-def create_pdf(labels, batch_number, font_name, width, height):
+def create_pdf(labels, font_name, width, height):
 
     buffer = BytesIO()
 
@@ -144,7 +134,7 @@ def create_pdf(labels, batch_number, font_name, width, height):
 
     for text in labels:
 
-        draw_label_pdf(c, batch_number, text, font_name, width, height)
+        draw_label_pdf(c, text, font_name, width, height)
         c.showPage()
 
     c.save()
@@ -199,7 +189,6 @@ if uploaded_file:
     st.write("Raw file preview")
     st.dataframe(df_raw)
 
-    # remove empty columns
     df_raw = df_raw.dropna(axis=1, how="all")
 
     # ==============================
@@ -278,24 +267,18 @@ if uploaded_file:
         if weight.lower() == "nan":
             weight = ""
 
-        label = f"{name} {weight}".strip()
+        label_text = f"BN/{batch_number}\n{name} {weight}".strip()
 
-        labels.append(label)
+        labels.append(label_text)
 
-    # remove duplicates
     labels = list(dict.fromkeys(labels))
 
     st.info(f"Labels to generate: {len(labels)}")
-
-    # ==============================
-    # GENERATE PDF
-    # ==============================
 
     if st.button("Generate Labels"):
 
         pdf_buffer = create_pdf(
             labels,
-            batch_number,
             selected_font,
             width_mm * mm,
             height_mm * mm
