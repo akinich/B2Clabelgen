@@ -5,7 +5,9 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from io import BytesIO
 
-# === CONSTANTS ===
+# =============================
+# SETTINGS
+# =============================
 
 DEFAULT_WIDTH_MM = 50
 DEFAULT_HEIGHT_MM = 30
@@ -21,7 +23,9 @@ AVAILABLE_FONTS = [
 ]
 
 
-# === TEXT WRAPPING ===
+# =============================
+# TEXT WRAPPING
+# =============================
 
 def wrap_text(text, font_name, font_size, max_width):
 
@@ -48,7 +52,9 @@ def wrap_text(text, font_name, font_size, max_width):
     return lines
 
 
-# === FAST FONT SIZE SEARCH ===
+# =============================
+# FONT SIZE SEARCH
+# =============================
 
 def find_max_font_size(text, max_width, max_height, font_name):
 
@@ -80,13 +86,14 @@ def find_max_font_size(text, max_width, max_height, font_name):
     return best
 
 
-# === DRAW LABEL ===
+# =============================
+# DRAW LABEL
+# =============================
 
 def draw_label_pdf(c, batch_number, product_text, font_name, width, height):
 
     batch_text = f"BN/{batch_number}"
 
-    # Batch line (smaller)
     batch_font_size = int(height * 0.18)
 
     c.setFont(font_name, batch_font_size)
@@ -98,7 +105,6 @@ def draw_label_pdf(c, batch_number, product_text, font_name, width, height):
 
     c.drawString(batch_x, batch_y, batch_text)
 
-    # Product text area
     product_area_height = height - batch_font_size - 10
 
     font_size = find_max_font_size(
@@ -127,7 +133,9 @@ def draw_label_pdf(c, batch_number, product_text, font_name, width, height):
         c.drawString(x, y, line)
 
 
-# === CREATE PDF ===
+# =============================
+# CREATE PDF
+# =============================
 
 def create_pdf(labels, batch_number, font_name, width, height):
 
@@ -148,7 +156,9 @@ def create_pdf(labels, batch_number, font_name, width, height):
     return buffer
 
 
-# === STREAMLIT UI ===
+# =============================
+# STREAMLIT UI
+# =============================
 
 st.title("Batch Label Generator")
 
@@ -171,7 +181,9 @@ height_mm = st.number_input(
 uploaded_file = st.file_uploader("Upload CSV or Excel", type=["csv", "xlsx"])
 
 
-# === FILE PROCESSING ===
+# =============================
+# FILE PROCESSING
+# =============================
 
 if uploaded_file:
 
@@ -183,53 +195,87 @@ if uploaded_file:
     st.write("Raw file preview")
     st.dataframe(df_raw)
 
-    # Remove empty columns
+    # remove completely empty columns
     df_raw = df_raw.dropna(axis=1, how="all")
 
-    # === BATCH NUMBER FROM C2 ===
-    try:
-        batch_number = str(df_raw.iloc[0,2]).strip()
-    except:
-        st.error("Could not read batch number from cell C2.")
+    # =============================
+    # FIND BATCH NUMBER
+    # =============================
+
+    batch_number = None
+
+    for i in range(len(df_raw)):
+        for j in range(len(df_raw.columns)):
+
+            cell = str(df_raw.iloc[i, j]).strip().lower()
+
+            if cell == "batch number":
+
+                batch_number = str(df_raw.iloc[i, j + 1]).strip()
+                break
+
+        if batch_number:
+            break
+
+    if not batch_number:
+        st.error("Batch number not found.")
         st.stop()
 
-    if batch_number.lower() == "nan" or batch_number == "":
-        st.error("Batch number missing in C2.")
+    # =============================
+    # FIND NAME + WEIGHT HEADERS
+    # =============================
+
+    header_row = None
+    name_col = None
+    weight_col = None
+
+    for i in range(len(df_raw)):
+
+        row_values = [str(x).strip().lower() for x in df_raw.iloc[i]]
+
+        if "name" in row_values and "weight" in row_values:
+
+            header_row = i
+            name_col = row_values.index("name")
+            weight_col = row_values.index("weight")
+
+            break
+
+    if header_row is None:
+        st.error("Could not find Name and Weight headers.")
         st.stop()
 
-    # === CREATE DATA TABLE ===
-    df = df_raw.iloc[1:].reset_index(drop=True)
-    df.columns = df.iloc[0]
-    df = df[1:].reset_index(drop=True)
+    # =============================
+    # EXTRACT DATA
+    # =============================
 
-    st.write("Parsed data")
-    st.dataframe(df)
-
-    if "Name" not in df.columns or "Weight" not in df.columns:
-        st.error("Columns 'Name' and 'Weight' not found.")
-        st.stop()
+    df = df_raw.iloc[header_row + 1:].reset_index(drop=True)
 
     labels = []
 
     for _, row in df.iterrows():
 
-        name = str(row["Name"]).strip()
-        weight = str(row["Weight"]).strip()
+        name = str(row[name_col]).strip()
+        weight = str(row[weight_col]).strip()
 
-        if not name or name.lower() == "nan":
+        if name.lower() == "nan" or name == "":
             continue
 
         if weight.lower() == "nan":
             weight = ""
 
-        product_text = f"{name} {weight}".strip()
+        label = f"{name} {weight}".strip()
 
-        labels.append(product_text)
+        labels.append(label)
 
-    # Remove duplicates
+    # remove duplicates
     labels = list(dict.fromkeys(labels))
 
     st.info(f"Labels to generate: {len(labels)}")
+
+    # =============================
+    # GENERATE PDF
+    # =============================
 
     if st.button("Generate Labels"):
 
